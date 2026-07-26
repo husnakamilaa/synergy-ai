@@ -1,33 +1,3 @@
-# import os
-# import pickle
-
-# from config.config import MODEL_PATH, FEATURES_PATH
-
-
-# class ModelStore:
-
-#     def __init__(self):
-#         self.model = None
-#         self.model_features = None
-
-#     def load(self):
-#         if not os.path.exists(MODEL_PATH) or not os.path.exists(FEATURES_PATH):
-#             raise FileNotFoundError(
-#                 f"Artefak model tidak ditemukan.\n"
-#                 f"  MODEL_PATH   : {MODEL_PATH}\n"
-#                 f"  FEATURES_PATH: {FEATURES_PATH}\n"
-#                 "Pastikan kedua file .pkl ada di folder model/."
-#             )
-
-#         with open(MODEL_PATH, "rb") as f:
-#             self.model = pickle.load(f)
-
-#         with open(FEATURES_PATH, "rb") as f:
-#             self.model_features = pickle.load(f)
-
-#         print("[SUCCESS] Otak XGBoost dan Blueprint Fitur berhasil dimuat ke memori server!")
-
-# model_store = ModelStore()
 
 import pickle
 import os

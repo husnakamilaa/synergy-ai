@@ -1,12 +1,6 @@
 import numpy as np
 import pandas as pd
 
-def minmax_robust(x, invert=False):
-    x = np.asarray(x, dtype=float)
-    lo, hi = np.nanpercentile(x, 1), np.nanpercentile(x, 99)
-    norm = (np.clip(x, lo, hi) - lo) / (hi - lo + 1e-9)
-    return (1 - norm) if invert else norm
-
 def fetch_and_calculate_features(conn, id_umkm: str, id_akad_variable: int):
     cursor = conn.cursor()
 
@@ -46,11 +40,11 @@ def fetch_and_calculate_features(conn, id_umkm: str, id_akad_variable: int):
     incomes = np.array([float(p['jumlah']) for p in pend_data])
     rg_list = [float(p['revenue_growth']) for p in pend_data if p['revenue_growth'] is not None]
 
-    cr = aset_lancar / total_hutang_kas
-    npm = laba_bersih / total_pendapatan
-    oer = total_beban / total_pendapatan
-    cfsr = float(incomes.std(ddof=1) / incomes.mean()) if len(incomes) > 1 else 0.0
-    atr = total_pendapatan / (aset_lancar + aset_tidak_lancar)
+    cr = aset_lancar / total_hutang_kas if total_hutang_kas > 0 else 0.0
+    npm = laba_bersih / total_pendapatan if total_pendapatan > 0 else 0.0
+    oer = total_beban / total_pendapatan if total_pendapatan > 0 else 0.0
+    cfsr = float(incomes.std(ddof=1) / incomes.mean()) if len(incomes) > 1 and incomes.mean() > 0 else 0.0
+    atr = total_pendapatan / (aset_lancar + aset_tidak_lancar) if (aset_lancar + aset_tidak_lancar) > 0 else 0.0
     rg = float(np.mean(rg_list)) if len(rg_list) > 0 else 0.0
 
     features_dict = {
@@ -62,31 +56,25 @@ def fetch_and_calculate_features(conn, id_umkm: str, id_akad_variable: int):
         'revenue_growth': round(rg, 4)
     }
 
-    # 4. HITUNG SKOR KELAYAKAN
-    # Menggunakan skala pembobotan rasio
-    bobot = {
-        'net_profit_margin': 0.25,
-        'revenue_growth': 0.20,
-        'current_ratio': 0.15,
-        'cashflow_stability_risk': 0.15,
-        'asset_turnover_ratio': 0.15,
-        'operating_expense_ratio': 0.10,
-    }
+    # 4. HITUNG SKOR KELAYAKAN (SAW 1-5 & BOBOT ROC)
+    # Konversi ke skor 1-5 menggunakan np.select agar cepat
+    skor_npm = np.select([npm > 0.20, npm >= 0.12, npm >= 0.05, npm >= 0.01], [5, 4, 3, 2], default=1)
+    skor_ato = np.select([atr >= 3.0, atr >= 2.0, atr >= 1.2, atr >= 0.7], [5, 4, 3, 2], default=1)
+    skor_cfsr = np.select([cfsr <= 0.25, cfsr <= 0.40, cfsr <= 0.60, cfsr <= 0.85], [5, 4, 3, 2], default=1)
+    skor_cr = np.select([cr >= 3.0, cr >= 2.0, cr >= 1.2, cr >= 1.0], [5, 4, 3, 2], default=1)
     
-    # Estimasi minmax sederhana untuk scoring
-    cr_norm = np.clip(cr / 4.0, 0, 1)
-    npm_norm = np.clip(npm / 0.5, 0, 1)
-    oer_norm = 1.0 - np.clip(oer, 0, 1)
-    cfsr_norm = 1.0 - np.clip(cfsr, 0, 1)
-    atr_norm = np.clip(atr / 3.5, 0, 1)
-    rg_norm = np.clip((rg + 0.5) / 1.0, 0, 1)
+    cond_rg = [(rg >= 0.15) & (rg <= 0.40), (rg >= 0.05) & (rg < 0.15), (rg >= 0.0) & (rg < 0.05), ((rg >= -0.10) & (rg < 0.0)) | (rg > 0.40)]
+    skor_rg = np.select(cond_rg, [5, 4, 3, 2], default=1)
+    
+    skor_oer = np.select([oer < 0.55, oer <= 0.70, oer <= 0.85, oer <= 0.95], [5, 4, 3, 2], default=1)
 
-    skor01 = (npm_norm * bobot['net_profit_margin'] +
-              rg_norm * bobot['revenue_growth'] +
-              cr_norm * bobot['current_ratio'] +
-              cfsr_norm * bobot['cashflow_stability_risk'] +
-              atr_norm * bobot['asset_turnover_ratio'] +
-              oer_norm * bobot['operating_expense_ratio'])
+    # Normalisasi (S - 1) / 4
+    r_npm, r_ato, r_cfsr = (skor_npm - 1)/4, (skor_ato - 1)/4, (skor_cfsr - 1)/4
+    r_cr, r_rg, r_oer    = (skor_cr - 1)/4, (skor_rg - 1)/4, (skor_oer - 1)/4
+
+    # Agregasi Bobot ROC
+    skor01 = (r_npm * 0.4083 + r_ato * 0.2417 + r_cfsr * 0.1583 + 
+              r_cr * 0.1028 + r_rg * 0.0611 + r_oer * 0.0278)
 
     skor_kelayakan = round(float(skor01 * 100), 4)
 

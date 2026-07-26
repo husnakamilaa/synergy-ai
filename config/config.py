@@ -1,17 +1,3 @@
-# import os
-# from pathlib import Path
-
-# BASE_DIR = Path(__file__).resolve().parent.parent
-
-# MODEL_PATH = os.path.join(BASE_DIR, "model", "best_xgboost_synergy.pkl")
-# FEATURES_PATH = os.path.join(BASE_DIR, "model", "model_features.pkl")
-
-# API_TITLE = "Synergy Credit Scoring API"
-# API_DESCRIPTION = "Sistem Pendukung Keputusan (SPK) Penentu Akad Syariah Berbasis XGBoost"
-# API_VERSION = "1.0"
-
-# BARUUU=============================
-
 import os
 import psycopg2
 from psycopg2.extras import RealDictCursor
