@@ -38,7 +38,28 @@ def fetch_and_calculate_features(conn, id_umkm: str, id_akad_variable: int):
     aset_tidak_lancar = float(var_data['aset_tidak_lancar'])
 
     incomes = np.array([float(p['jumlah']) for p in pend_data])
-    rg_list = [float(p['revenue_growth']) for p in pend_data if p['revenue_growth'] is not None]
+    
+    rg_list = []
+    
+    # Looping mulai dari bulan kedua (index 1), karena bulan pertama gak punya bulan lalu
+    for i in range(1, len(pend_data)):
+        # 1. Cek isi kolom revenue_growth dari database
+        db_rg = pend_data[i]['revenue_growth']
+        
+        # 2. Logika pengecekan: Ambil jika ada, Hitung jika NULL
+        if db_rg is not None:
+            # Kalau di DB sudah ada isinya, langsung ambil
+            rg_list.append(float(db_rg))
+        else:
+            # Kalau di DB NULL, kalkulasi manual on-the-fly
+            prev_income = incomes[i-1]
+            curr_income = incomes[i]
+            
+            if prev_income > 0:
+                growth = (curr_income - prev_income) / prev_income
+                rg_list.append(growth)
+            else:
+                rg_list.append(0.0)
 
     cr = aset_lancar / total_hutang_kas if total_hutang_kas > 0 else 0.0
     npm = laba_bersih / total_pendapatan if total_pendapatan > 0 else 0.0
