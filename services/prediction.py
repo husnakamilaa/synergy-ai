@@ -16,9 +16,9 @@ def process_prediction_and_save(conn, id_umkm: str, id_akad_variable: int, featu
         INSERT INTO akad_analisis (
             id_umkm, id_akad_variable, id_pendapatan,
             current_ratio, net_profit_margin, operating_expense_ratio,
-            cashflow_stability_risk, asset_turnover_ratio,
+            cashflow_stability_risk, asset_turnover_ratio, revenue_growth,
             skor_kelayakan, akad
-        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         RETURNING id;
     """
     cursor.execute(query, (
