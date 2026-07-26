@@ -24,6 +24,7 @@ class DetailAnalisisData(BaseModel):
     operating_expense_ratio: float
     cashflow_stability_risk: float
     asset_turnover_ratio: float
+    revenue_growth: Optional[float] = None
     skor_kelayakan: float
     akad: str
 
