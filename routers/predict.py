@@ -29,7 +29,7 @@ from config.config import get_db_connection
 from services.feature_engineering import fetch_and_calculate_features
 from services.prediction import process_prediction_and_save
 
-router = APIRouter(prefix="/api/v1", tags=["Analisis Akad"])
+router = APIRouter(prefix="/api", tags=["Analisis Akad"])
 
 # -------------------------------------------------------------
 # 1. ENDPOINT POST: TRIGGER KALKULASI, PREDIKSI ML, & SIMPAN
