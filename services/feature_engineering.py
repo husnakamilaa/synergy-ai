@@ -17,7 +17,7 @@ def fetch_and_calculate_features(conn, id_umkm: str, id_akad_variable: int):
 
     # GET : pendapatan bulanan
     cursor.execute("""
-        SELECT id, jumlah, revenue_growth 
+        SELECT id, bulan, tahun, jumlah, revenue_growth 
         FROM pendapatan_bulanan 
         WHERE id_umkm = %s 
         ORDER BY id ASC
