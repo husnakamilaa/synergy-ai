@@ -1,16 +1,17 @@
+# DISINI BUAT PREDIKSINYA
+# 1. sesuaiin sama fetures yang ada di model_features
+# 2. prediksi
+# 3. insert ke tabel
 
 import pandas as pd
 from ml.ml_model import xgboost_model, model_features, label_encoder
 
 def process_prediction_and_save(conn, id_umkm: str, id_akad_variable: int, features_dict: dict, skor_kelayakan: float, id_pendapatan: int):
-    # 1. Susun DataFrame sesuai urutan fitur cetakan (model_features.pkl)
     df_input = pd.DataFrame([features_dict])[model_features]
 
-    # 2. Prediksi dengan XGBoost & Decode Label
     pred_num = xgboost_model.predict(df_input)[0]
-    akad_label = label_encoder.inverse_transform([pred_num])[0]  # Hasil: 'Mudharabah' atau 'Musyarakah'
+    akad_label = label_encoder.inverse_transform([pred_num])[0]  
 
-    # 3. INSERT HASIL KE TABEL akad_analisis POSTGRESQL
     cursor = conn.cursor()
     query = """
         INSERT INTO akad_analisis (

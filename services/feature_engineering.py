@@ -4,7 +4,7 @@ import pandas as pd
 def fetch_and_calculate_features(conn, id_umkm: str, id_akad_variable: int):
     cursor = conn.cursor()
 
-    # 1. GET data mentah dari akad_variable
+    # GET : data variable akad
     cursor.execute("""
         SELECT aset_lancar, total_hutang_kas, laba_bersih, total_pendapatan, total_beban, aset_tidak_lancar 
         FROM akad_variable 
@@ -15,7 +15,7 @@ def fetch_and_calculate_features(conn, id_umkm: str, id_akad_variable: int):
     if not var_data:
         raise ValueError("Data di tabel akad_variable tidak ditemukan!")
 
-    # 2. GET data historis dari pendapatan_bulanan
+    # GET : pendapatan bulanan
     cursor.execute("""
         SELECT id, jumlah, revenue_growth 
         FROM pendapatan_bulanan 
@@ -27,9 +27,25 @@ def fetch_and_calculate_features(conn, id_umkm: str, id_akad_variable: int):
     if not pend_data or len(pend_data) < 2:
         raise ValueError("Data pendapatan bulanan untuk UMKM ini minimal harus 2 bulan!")
 
-    id_pendapatan_terakhir = pend_data[-1]['id']
+    # 1. BIKIN KAMUS BULAN
+    bulan_map = {
+        'Januari': 1, 'Februari': 2, 'Maret': 3, 'April': 4,
+        'Mei': 5, 'Juni': 6, 'Juli': 7, 'Agustus': 8,
+        'September': 9, 'Oktober': 10, 'November': 11, 'Desember': 12
+    }
 
-    # 3. KALKULASI 6 RASIO
+    # Masukkan angka bulan ke dalam tiap baris data
+    for p in pend_data:
+        nama_bulan = p['bulan'].strip().capitalize()
+        p['bulan_angka'] = bulan_map.get(nama_bulan, 0)
+        p['tahun'] = int(p['tahun'])
+        p['jumlah'] = float(p['jumlah'])
+
+    # 2. URUTKAN DATA SECARA KRONOLOGIS (Tahun dulu, baru Bulan)
+    pend_data_sorted = sorted(pend_data, key=lambda x: (x['tahun'], x['bulan_angka']))
+    id_pendapatan_terakhir = pend_data_sorted[-1]['id']
+
+    # KALKULASI RASIO
     aset_lancar = float(var_data['aset_lancar'])
     total_hutang_kas = float(var_data['total_hutang_kas'])
     laba_bersih = float(var_data['laba_bersih'])
@@ -37,25 +53,33 @@ def fetch_and_calculate_features(conn, id_umkm: str, id_akad_variable: int):
     total_beban = float(var_data['total_beban'])
     aset_tidak_lancar = float(var_data['aset_tidak_lancar'])
 
-    incomes = np.array([float(p['jumlah']) for p in pend_data])
+    # Pastikan array incomes menggunakan data yang sudah urut (penting untuk perhitungan CFSR)
+    incomes = np.array([float(p['jumlah']) for p in pend_data_sorted])
     
     rg_list = []
-    
-    # Looping mulai dari bulan kedua (index 1), karena bulan pertama gak punya bulan lalu
-    for i in range(1, len(pend_data)):
-        # 1. Cek isi kolom revenue_growth dari database
-        db_rg = pend_data[i]['revenue_growth']
+
+    # 3. LOOPING HITUNG GROWTH MENGGUNAKAN CMGR
+    for i in range(1, len(pend_data_sorted)):
+        curr_data = pend_data_sorted[i]
+        prev_data = pend_data_sorted[i-1]
         
-        # 2. Logika pengecekan: Ambil jika ada, Hitung jika NULL
+        db_rg = curr_data['revenue_growth']
+        
         if db_rg is not None:
-            # Kalau di DB sudah ada isinya, langsung ambil
             rg_list.append(float(db_rg))
         else:
-            # Kalau di DB NULL, kalkulasi manual on-the-fly
-            prev_income = incomes[i-1]
-            curr_income = incomes[i]
+            prev_income = prev_data['jumlah']
+            curr_income = curr_data['jumlah']
             
-            if prev_income > 0:
+            # Hitung jarak bulan (n)
+            gap_tahun = curr_data['tahun'] - prev_data['tahun']
+            gap_bulan = curr_data['bulan_angka'] - prev_data['bulan_angka']
+            n_months = (gap_tahun * 12) + gap_bulan
+            
+            if prev_income > 0 and n_months > 0:
+                growth = (curr_income / prev_income) ** (1 / n_months) - 1
+                rg_list.append(growth)
+            elif prev_income > 0 and n_months <= 0:
                 growth = (curr_income - prev_income) / prev_income
                 rg_list.append(growth)
             else:
@@ -77,23 +101,22 @@ def fetch_and_calculate_features(conn, id_umkm: str, id_akad_variable: int):
         'revenue_growth': round(rg, 4)
     }
 
-    # 4. HITUNG SKOR KELAYAKAN (SAW 1-5 & BOBOT ROC)
-    # Konversi ke skor 1-5 menggunakan np.select agar cepat
+    # DISINI ITUNG SAWNYA
+    # skalain jdi 1-5 dulu
     skor_npm = np.select([npm > 0.20, npm >= 0.12, npm >= 0.05, npm >= 0.01], [5, 4, 3, 2], default=1)
     skor_ato = np.select([atr >= 3.0, atr >= 2.0, atr >= 1.2, atr >= 0.7], [5, 4, 3, 2], default=1)
     skor_cfsr = np.select([cfsr <= 0.25, cfsr <= 0.40, cfsr <= 0.60, cfsr <= 0.85], [5, 4, 3, 2], default=1)
     skor_cr = np.select([cr >= 3.0, cr >= 2.0, cr >= 1.2, cr >= 1.0], [5, 4, 3, 2], default=1)
-    
     cond_rg = [(rg >= 0.15) & (rg <= 0.40), (rg >= 0.05) & (rg < 0.15), (rg >= 0.0) & (rg < 0.05), ((rg >= -0.10) & (rg < 0.0)) | (rg > 0.40)]
     skor_rg = np.select(cond_rg, [5, 4, 3, 2], default=1)
     
     skor_oer = np.select([oer < 0.55, oer <= 0.70, oer <= 0.85, oer <= 0.95], [5, 4, 3, 2], default=1)
 
-    # Normalisasi (S - 1) / 4
+    # normalisasi (S - 1) / 4
     r_npm, r_ato, r_cfsr = (skor_npm - 1)/4, (skor_ato - 1)/4, (skor_cfsr - 1)/4
     r_cr, r_rg, r_oer    = (skor_cr - 1)/4, (skor_rg - 1)/4, (skor_oer - 1)/4
 
-    # Agregasi Bobot ROC
+    # Kalkulasi Bobot ROC
     skor01 = (r_npm * 0.4083 + r_ato * 0.2417 + r_cfsr * 0.1583 + 
               r_cr * 0.1028 + r_rg * 0.0611 + r_oer * 0.0278)
 
